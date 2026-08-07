@@ -7,7 +7,7 @@
     let usuarios = [];
     let cidades = [];
     let usuarioLogado = null;
-    let cidadeAtual = '';
+    let cidadeAtual = 'buique';
     let dadosPlanilha = [];
     let recibos = [];
     let logs = [];
@@ -22,12 +22,25 @@
     // ============================================================
     const USUARIOS_PADRAO = [
         {
-            id: 'admin_global', login: 'admin', senha: '1603101989Ra-', nome: 'Administrador Global', cidade: 'all',
+            id: 'admin_global', login: 'admin', senha: 'admin123', nome: 'Administrador Global', cidade: 'all',
             nivel: 'admin', status: 'ativo'
+        },
+        {
+            id: 'dk_testes', login: 'dktestes', senha: '123456', nome: 'Dk Testes', cidade: 'buique',
+            nivel: 'usuario', status: 'ativo'
         }
     ];
 
-    const CIDADES_PADRAO = [];
+    const CIDADES_PADRAO = [
+        { id: 'inaja', nome: 'Inajá', estado: 'PE', responsavel: '', ativo: true },
+        { id: 'tupanatinga', nome: 'Tupanatinga', estado: 'PE', responsavel: '', ativo: true },
+        { id: 'buique', nome: 'Buíque', estado: 'PE', responsavel: '', ativo: true },
+        { id: 'itaiba', nome: 'Itaíba', estado: 'PE', responsavel: '', ativo: true },
+        { id: 'manari', nome: 'Manarí', estado: 'PE', responsavel: '', ativo: true },
+        { id: 'jirau', nome: 'Jirau', estado: 'PE', responsavel: '', ativo: true },
+        { id: 'arcoverde', nome: 'Arcoverde', estado: 'PE', responsavel: '', ativo: true },
+        { id: 'negras', nome: 'Negras', estado: 'PE', responsavel: '', ativo: true }
+    ];
 
     // ============================================================
     // FUNÇÕES DE CARREGAMENTO/SALVAMENTO
@@ -3442,23 +3455,55 @@ function exportarRecibosParaExcel() {
     // ============================================================
     function atualizarInterfaceUsuario() {
         const cidade = getCidadeById(cidadeAtual);
-        const cidadeNome = cidade ? cidade.nome : 'Carregando...';
+        const cidadeNome = cidade ? cidade.nome : '—';
+        const nomeUser = usuarioLogado ? (usuarioLogado.nome || usuarioLogado.login) : 'Carregando...';
+        const primeiroNome = (nomeUser || '').split(' ')[0] || 'Usuário';
 
-        document.getElementById('sidebarCidade').textContent = `📍 ${cidadeNome}`;
-        document.getElementById('headerCidade').textContent = cidadeNome;
-        document.getElementById('headerBadge').textContent = cidadeNome;
-        document.getElementById('headerUsuario').innerHTML = `👤 <strong>${usuarioLogado ? usuarioLogado.nome : 'Carregando...'}`;
+        // Sidebar (logo permanece no HTML)
+        const sidebarEl = document.getElementById('sidebarCidade');
+        if (sidebarEl) {
+            sidebarEl.textContent = cidadeNome !== '—' ? `📍 ${cidadeNome}` : '📍 Sem cidade';
+        }
 
-        document.getElementById('panelCidadeNome').textContent = cidadeNome;
-        document.getElementById('reciboPanelCidade').textContent = cidadeNome;
-        document.getElementById('historicoCidade').textContent = cidadeNome;
-        document.getElementById('backupCidade').textContent = cidadeNome;
+        // Saudação com animação suave
+        const welcomeEl = document.getElementById('headerWelcome');
+        const cidadeEl = document.getElementById('headerCidade');
+        const userEl = document.getElementById('headerUsuario');
+
+        if (welcomeEl) {
+            welcomeEl.textContent = `👋 Olá, ${primeiroNome}!`;
+            welcomeEl.classList.remove('animating');
+            void welcomeEl.offsetWidth; // reinicia animação
+            welcomeEl.classList.add('animating');
+        }
+        if (cidadeEl) {
+            cidadeEl.textContent = cidadeNome !== '—'
+                ? `Caixa diário · ${cidadeNome}`
+                : 'Caixa diário';
+            cidadeEl.classList.remove('animating');
+            void cidadeEl.offsetWidth;
+            cidadeEl.classList.add('animating');
+        }
+        if (userEl) {
+            userEl.innerHTML = `👤 <strong>${nomeUser}</strong>`;
+            userEl.classList.remove('animating');
+            void userEl.offsetWidth;
+            userEl.classList.add('animating');
+        }
+
+        // Paineis
+        const setTxt = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = val;
+        };
+        setTxt('panelCidadeNome', cidadeNome);
+        setTxt('reciboPanelCidade', cidadeNome);
+        setTxt('historicoCidade', cidadeNome);
+        setTxt('backupCidade', cidadeNome);
 
         const btnAdmin = document.getElementById('btnAdmin');
-        if (usuarioLogado && usuarioLogado.nivel === 'admin') {
-            btnAdmin.style.display = 'flex';
-        } else {
-            btnAdmin.style.display = 'none';
+        if (btnAdmin) {
+            btnAdmin.style.display = (usuarioLogado && usuarioLogado.nivel === 'admin') ? 'flex' : 'none';
         }
 
         renderizarTabela();
