@@ -26,7 +26,7 @@
             nivel: 'admin', status: 'ativo'
         },
         {
-            id: 'dk_testes', login: 'dktestes', senha: '123456', nome: 'Dk Testes', cidade: 'buique',
+            id: 'dk_testes', login: 'dktestes', senha: '123456', nome: 'Dk Testes', cidade: 'manari',
             nivel: 'usuario', status: 'ativo'
         }
     ];
