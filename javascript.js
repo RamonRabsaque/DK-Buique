@@ -22,11 +22,11 @@
     // ============================================================
     const USUARIOS_PADRAO = [
         {
-            id: 'admin_global', login: 'admin', senha: 'admin123', nome: 'Administrador Global', cidade: 'all',
+            id: 'admin_global', login: 'admin', senha: '1603101989Ra-', nome: 'Administrador Global', cidade: 'all',
             nivel: 'admin', status: 'ativo'
         },
         {
-            id: 'dk_testes', login: 'dktestes', senha: '123456', nome: 'Dk Testes', cidade: 'manari',
+            id: 'dk_testes', login: 'dktestes', senha: '1603101989rA-', nome: 'Dk Testes', cidade: 'manari',
             nivel: 'usuario', status: 'ativo'
         }
     ];
