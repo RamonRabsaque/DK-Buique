@@ -18,17 +18,34 @@
     let modoParcial = false;
 
     // ============================================================
+    // CONFIGURAÇÃO SUPABASE (APENAS AUTENTICAÇÃO)
+    // ============================================================
+    const SUPABASE_URL = 'https://xhwccwxzztmvfqednlnk.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhod2Njd3h6enRtdmZxZWRubG5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczNTk4NjYsImV4cCI6MjEwMjkzNTg2Nn0.IG2j90bPflX69LNxOwMuZ21VDCQrEEPMaI7FCjHeYeA';
+
+    // Inicializar Supabase
+    window.supabaseClient = null;
+
+    try {
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log('✅ Supabase conectado!');
+    } catch (e) {
+        console.error('❌ Erro ao conectar Supabase:', e);
+    }
+
+    function supabaseDisponivel() {
+        return window.supabaseClient !== null;
+    }
+
+    // ============================================================
     // USUÁRIOS E CIDADES PADRÃO
     // ============================================================
     const USUARIOS_PADRAO = [
         {
-            id: 'admin_global', login: 'admin', senha: '1603101989Ra-', nome: 'Administrador Global', cidade: 'all',
+            id: 'admin_global', login: 'admin', senha: 'admin123', nome: 'Administrador Global', cidade: 'all',
             nivel: 'admin', status: 'ativo'
         },
-        {
-            id: 'dk_testes', login: 'dktestes', senha: '1603101989rA-', nome: 'Dk Testes', cidade: 'manari',
-            nivel: 'usuario', status: 'ativo'
-        }
+
     ];
 
     const CIDADES_PADRAO = [
@@ -43,54 +60,99 @@
     ];
 
     // ============================================================
-    // FUNÇÕES DE CARREGAMENTO/SALVAMENTO
+    // FUNÇÕES DE CARREGAMENTO/SALVAMENTO (COM SUPABASE)
     // ============================================================
-    function carregarUsuarios() {
+
+    // Salvar usuários localmente (fallback)
+    function salvarUsuariosLocal() {
+        try { localStorage.setItem('dk_usuarios', JSON.stringify(usuarios)); } catch (e) { }
+    }
+
+    // Salvar cidades localmente (fallback)
+    function salvarCidadesLocal() {
+        try { localStorage.setItem('dk_cidades', JSON.stringify(cidades)); } catch (e) { }
+    }
+
+    async function carregarUsuarios() {
+        if (supabaseDisponivel()) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('usuarios')
+                    .select('*')
+                    .order('nome');
+
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    usuarios = data;
+                    salvarUsuariosLocal();
+                    return;
+                }
+            } catch (e) {
+                console.warn('⚠️ Erro ao carregar do Supabase, usando localStorage:', e);
+            }
+        }
+
+        // Fallback para localStorage
         try {
             const saved = localStorage.getItem('dk_usuarios');
             if (saved) {
                 usuarios = JSON.parse(saved);
-                for (let u of USUARIOS_PADRAO) {
-                    if (!usuarios.find(usr => usr.id === u.id)) {
-                        usuarios.push({ ...u });
-                    }
-                }
             } else {
                 usuarios = USUARIOS_PADRAO.map(u => ({ ...u }));
             }
-            salvarUsuarios();
+            salvarUsuariosLocal();
         } catch (e) {
             usuarios = USUARIOS_PADRAO.map(u => ({ ...u }));
         }
     }
 
-    function salvarUsuarios() {
-        try { localStorage.setItem('dk_usuarios', JSON.stringify(usuarios)); } catch (e) { }
-    }
+    async function carregarCidades() {
+        if (supabaseDisponivel()) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('cidades')
+                    .select('*')
+                    .eq('ativo', true)
+                    .order('nome');
 
-    function carregarCidades() {
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    cidades = data;
+                    salvarCidadesLocal();
+                    return;
+                }
+            } catch (e) {
+                console.warn('⚠️ Erro ao carregar cidades do Supabase, usando localStorage:', e);
+            }
+        }
+
+        // Fallback para localStorage
         try {
             const saved = localStorage.getItem('dk_cidades');
             if (saved) {
                 cidades = JSON.parse(saved);
-                for (let c of CIDADES_PADRAO) {
-                    if (!cidades.find(cid => cid.id === c.id)) {
-                        cidades.push({ ...c });
-                    }
-                }
             } else {
                 cidades = CIDADES_PADRAO.map(c => ({ ...c }));
             }
-            salvarCidades();
+            salvarCidadesLocal();
         } catch (e) {
             cidades = CIDADES_PADRAO.map(c => ({ ...c }));
         }
     }
 
-    function salvarCidades() {
-        try { localStorage.setItem('dk_cidades', JSON.stringify(cidades)); } catch (e) { }
+    function salvarUsuarios() {
+        salvarUsuariosLocal();
     }
 
+    function salvarCidades() {
+        salvarCidadesLocal();
+    }
+
+    // ============================================================
+    // FUNÇÕES DE CARREGAMENTO DE DADOS (LOCALSTORAGE)
+    // ============================================================
     function carregarLogs() {
         try {
             const saved = localStorage.getItem('dk_logs');
@@ -145,6 +207,7 @@
             localStorage.setItem(chavePlanilha, JSON.stringify(dadosPlanilha));
             localStorage.setItem(chaveRecibos, JSON.stringify(recibos));
             fazerBackupAutomatico();
+            localStorage.setItem('dk_cidade_atual', cidadeAtual);
         } catch (e) { }
     }
 
@@ -309,9 +372,11 @@
     }
 
     // ============================================================
-    // AUTENTICAÇÃO
+    // AUTENTICAÇÃO (COM SUPABASE)
     // ============================================================
-    function fazerLogin(login, senha, cidadeId) {
+
+    // Função de login local (fallback)
+    function fazerLoginLocal(login, senha, cidadeId) {
         const usuario = usuarios.find(u =>
             u.login.toLowerCase() === login.toLowerCase() &&
             u.senha === senha &&
@@ -359,17 +424,89 @@
         return true;
     }
 
+    async function fazerLogin(login, senha, cidadeId) {
+        // Tenta Supabase primeiro
+        if (supabaseDisponivel()) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('usuarios')
+                    .select('*')
+                    .eq('login', login.toLowerCase())
+                    .eq('senha', senha)
+                    .eq('status', 'ativo')
+                    .maybeSingle();   // ← melhor que .single()
+
+                if (error) {
+                    console.warn('Erro Supabase (login):', error.message);
+                    // Cai no fallback local
+                    return fazerLoginLocal(login, senha, cidadeId);
+                }
+
+                if (!data) {
+                    // Usuário não encontrado no Supabase → tenta local
+                    return fazerLoginLocal(login, senha, cidadeId);
+                }
+
+                const usuario = data;
+
+                // === mesmo código de verificação de cidade que você já tem ===
+                if (usuario.cidade === 'all' && usuario.nivel === 'admin') {
+                    usuarioLogado = usuario;
+                    cidadeAtual = cidadeId;
+                    localStorage.setItem('dk_sessao', JSON.stringify({
+                        usuarioId: usuario.id,
+                        cidade: cidadeId,
+                        data: new Date().toISOString(),
+                        supabase: true
+                    }));
+                    adicionarLog('✅ Login realizado (Admin Global)', `${usuario.nome} - ${getCidadeNome(cidadeId)}`);
+                    document.getElementById('loginError').classList.remove('show');
+                    return true;
+                }
+
+                if (usuario.cidade !== cidadeId) {
+                    document.getElementById('loginError').classList.add('show');
+                    document.getElementById('loginError').textContent = '❌ Você não tem acesso a esta cidade!';
+                    adicionarLog('❌ Tentativa de login', `Usuário: ${login} - Acesso negado à cidade ${cidadeId}`);
+                    return false;
+                }
+
+                usuarioLogado = usuario;
+                cidadeAtual = cidadeId;
+                localStorage.setItem('dk_sessao', JSON.stringify({
+                    usuarioId: usuario.id,
+                    cidade: cidadeId,
+                    data: new Date().toISOString(),
+                    supabase: true
+                }));
+                adicionarLog('✅ Login realizado', `${usuario.nome} - ${getCidadeNome(cidadeId)}`);
+                document.getElementById('loginError').classList.remove('show');
+                return true;
+
+            } catch (e) {
+                console.error('Erro no login via Supabase:', e);
+                return fazerLoginLocal(login, senha, cidadeId);
+            }
+        }
+
+        // Fallback total
+        return fazerLoginLocal(login, senha, cidadeId);
+    }
+
     function verificarSessao() {
         try {
             const sessao = localStorage.getItem('dk_sessao');
             if (!sessao) return false;
             const dados = JSON.parse(sessao);
-            const usuario = getUserById(dados.usuarioId);
+            const usuario = usuarios.find(u => u.id === dados.usuarioId);
             if (!usuario || usuario.status !== 'ativo') return false;
             usuarioLogado = usuario;
             cidadeAtual = dados.cidade;
             return true;
-        } catch (e) { return false; }
+        } catch (e) {
+            console.error('Erro ao verificar sessão:', e);
+            return false;
+        }
     }
 
     function logout() {
@@ -479,7 +616,7 @@
                             clear: both; 
                             color: #1a3a5c;
                         }
-                        .recibo-form-card-print:nth-child(4n) { page-break-after: always; }
+                        .recibo-form-card-print:nth-child(5n) { page-break-after: always; }
                         .footer-print {
                             text-align: center;
                             margin-top: 16px;
@@ -496,10 +633,19 @@
                         }
                         @media print {
                             body { padding: 5mm 8mm; }
-                            .recibo-form-card-print { border: 1px solid #000; padding: 8px 12px; margin: 0 0 4px 0; font-size: 9px; }
-                            .recibo-form-card-print .linha-recibo-print label { width: 60px; font-size: 8px; }
-                            .recibo-form-card-print .linha-recibo-print .valor-print { font-size: 9px; padding: 1px 4px; }
-                            .recibo-form-card-print .logo-recibo-print img { max-width: 50px; }
+                            .recibo-form-card-print { 
+                                border: 1px solid #000; 
+                                padding: 4px 8px; 
+                                margin: 0 0 4px 0; 
+                                font-size: 7px;
+                                height: calc(19vh - 4px);
+                                min-height: 75px;
+                                max-height: 95px;
+                            }
+                            .recibo-form-card-print .linha-recibo-print label { width: 60px; font-size: 7px; }
+                            .recibo-form-card-print .linha-recibo-print .valor-print { font-size: 8px; padding: 1px 4px; }
+                            .recibo-form-card-print .logo-recibo-print img { max-width: 40px; }
+                            .recibo-form-card-print:nth-child(5n) { page-break-after: always; }
                         }
                         @page { size: A4; margin: 10mm 15mm; }
                     </style>
@@ -536,6 +682,74 @@
     // ============================================================
     // FUNÇÃO GERAR HTML RECIBO
     // ============================================================
+    function gerarHTMLReciboIdentico(rec) {
+        if (!rec) return '';
+
+        let metodoStr = '';
+        if (rec.pagamentoParcial) {
+            const partes = [];
+            if ((rec.valorDinheiro || 0) > 0) partes.push(`Dinheiro: ${formatarMoeda(rec.valorDinheiro)}`);
+            if ((rec.valorPix || 0) > 0) partes.push(`PIX: ${formatarMoeda(rec.valorPix)}`);
+            if ((rec.valorCartao || 0) > 0) partes.push(`Cartão: ${formatarMoeda(rec.valorCartao)}`);
+            metodoStr = partes.join(' | ') || 'Pagamento Dividido';
+        } else {
+            metodoStr = rec.metodoPagamento || 'Dinheiro';
+        }
+
+        const nome = escapeHtml(rec.nome || '______________');
+        const login = escapeHtml(rec.login || '—');
+        const idContrato = escapeHtml(rec.idContrato || '—');
+        const data = rec.dataFormatada || formatarDataParaExibir(rec.data) || '—';
+        const referencia = rec.referenciaFormatada || formatarDataParaExibir(rec.referencia) || '—';
+        const valor = rec.valor || 'R$ 0,00';
+        const cidadeNome = getCidadeNome(cidadeAtual);
+
+        return `
+            <div class="recibo-form-card-print">
+                <div class="logo-recibo-print">
+                    <div style="font-size:18px;font-weight:700;color:#1e3a5f;letter-spacing:1px;">DK TELECOM</div>
+                    <div style="font-size:11px;color:#666;margin-top:2px;">${escapeHtml(cidadeNome)}</div>
+                </div>
+                <div class="recibo-linhas-print">
+                    <div class="linha-recibo-print">
+                        <label>NOME:</label>
+                        <span class="valor-print">${nome}</span>
+                    </div>
+                    <div class="linha-dupla-print">
+                        <div class="linha-recibo-print">
+                            <label>DATA:</label>
+                            <span class="valor-print">${data}</span>
+                        </div>
+                        <div class="linha-recibo-print">
+                            <label>MÊS REF:</label>
+                            <span class="valor-print">${referencia}</span>
+                        </div>
+                    </div>
+                    <div class="linha-recibo-print">
+                        <label>VALOR:</label>
+                        <span class="valor-print" style="font-weight:700;">${valor}</span>
+                    </div>
+                    <div class="linha-recibo-print">
+                        <label>PAGAMENTO:</label>
+                        <span class="valor-print">${escapeHtml(metodoStr)}</span>
+                    </div>
+                    <div class="linha-dupla-print">
+                        <div class="linha-recibo-print">
+                            <label>LOGIN:</label>
+                            <span class="valor-print">${login}</span>
+                        </div>
+                        <div class="linha-recibo-print">
+                            <label>ID:</label>
+                            <span class="valor-print">${idContrato}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    // ============================================================
+    // FUNÇÃO GERAR HTML TABELA PARA PDF
+    // ============================================================
     function gerarHTMLTabela(cidade) {
         let totalMensalidades = 0, totalInstalacoes = 0, totalDespesas = 0;
         let totalDinheiro = 0, totalPix = 0, totalEntradas = 0;
@@ -568,7 +782,6 @@
         const resultadoCor = resultado >= 0 ? '#15803d' : '#b91c1c';
         const resultadoSinal = resultado >= 0 ? '+' : '';
 
-        // Funções auxiliares dentro da função
         function formatarMoedaPDF(valor) {
             if (valor === undefined || valor === null || isNaN(valor) || valor == 0) return 'R$ 0,00';
             return 'R$ ' + parseFloat(valor).toFixed(2).replace('.', ',');
@@ -589,7 +802,6 @@
     <title>Planilha de Caixa - ${cidadeNome}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
         body {
             background: #f0f4f8;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -598,7 +810,6 @@
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
-
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -607,8 +818,6 @@
             box-shadow: 0 8px 40px rgba(0,0,0,0.06);
             overflow: hidden;
         }
-
-        /* ===== HEADER ===== */
         .header {
             background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
             color: white;
@@ -619,38 +828,30 @@
             flex-wrap: wrap;
             gap: 12px;
         }
-
         .header-left h1 {
             font-size: 22px;
             font-weight: 700;
             letter-spacing: -0.4px;
             margin-bottom: 2px;
         }
-
-        .header-left h1 span {
-            color: #60a5fa;
-        }
-
+        .header-left h1 span { color: #60a5fa; }
         .header-left .subtitle {
             font-size: 13px;
             opacity: 0.7;
             font-weight: 400;
             letter-spacing: 0.3px;
         }
-
         .header-right {
             display: flex;
             align-items: center;
             gap: 20px;
         }
-
         .header-right .data {
             font-size: 15px;
             font-weight: 600;
             color: #e2e8f0;
             white-space: nowrap;
         }
-
         .header-right .fluxo {
             display: inline-block;
             background: rgba(34, 197, 94, 0.15);
@@ -663,15 +864,12 @@
             letter-spacing: 0.3px;
             white-space: nowrap;
         }
-
-        /* ===== TABELA ===== */
         .table-wrapper {
             padding: 0;
             margin: 0;
             overflow-x: auto;
             width: 100%;
         }
-
         .caixa {
             width: 100%;
             border-collapse: collapse;
@@ -682,8 +880,6 @@
             padding: 0;
             border: 1px solid #000;
         }
-
-        /* ===== CABEÇALHO ===== */
         .cabecalho th {
             background: #D9D9D9;
             color: #1a1a2e;
@@ -695,12 +891,7 @@
             border: 1px solid #000;
             text-align: center;
         }
-
-        .cabecalho th:nth-child(2) { 
-            text-align: left; 
-        }
-
-        /* ===== LINHAS DE DADOS ===== */
+        .cabecalho th:nth-child(2) { text-align: left; }
         .linha-dados td {
             padding: 7px 5px;
             border: 1px solid #000;
@@ -710,43 +901,24 @@
             font-size: 10px;
             background: #DCE6F1;
         }
-
         .linha-dados td:nth-child(2) {
             text-align: left;
             font-weight: 600;
             font-size: 12px;
         }
-
-        /* Cores das colunas de dados (igual ao Excel) */
-        .linha-dados td:nth-child(1) { background: #DCE6F1; }  /* Vencimento */
-        .linha-dados td:nth-child(2) { background: #DCE6F1; }  /* Cliente */
-        .linha-dados td:nth-child(3) { background: #D9EAD3; }  /* Mensalidade */
-        .linha-dados td:nth-child(4) { background: #DCE6F1; }  /* Instalação */
-        .linha-dados td:nth-child(5) { background: #D9EAD3; }  /* Valor Inst. */
-        .linha-dados td:nth-child(6) { background: #F4B6C1; }  /* Despesas */
-        .linha-dados td:nth-child(7) { background: #F4B6C1; }  /* Valor Desp. */
-        .linha-dados td:nth-child(8) { background: #DCE6F1; }  /* Dinheiro */
-        .linha-dados td:nth-child(9) { background: #DCE6F1; }  /* PIX/Cartão */
-
-        .linha-dados:hover td {
-            opacity: 0.85;
-        }
-
-        /* Cores dos valores */
-        .col-valor-entrada {
-            color: #1a7a3a;
-            font-weight: 600;
-        }
-        .col-valor-despesa {
-            color: #bc4e2c;
-            font-weight: 600;
-        }
-        .col-check {
-            font-weight: 700;
-            font-size: 14px;
-        }
-
-        /* ===== TOTAL ===== */
+        .linha-dados td:nth-child(1) { background: #DCE6F1; }
+        .linha-dados td:nth-child(2) { background: #DCE6F1; }
+        .linha-dados td:nth-child(3) { background: #D9EAD3; }
+        .linha-dados td:nth-child(4) { background: #DCE6F1; }
+        .linha-dados td:nth-child(5) { background: #D9EAD3; }
+        .linha-dados td:nth-child(6) { background: #F4B6C1; }
+        .linha-dados td:nth-child(7) { background: #F4B6C1; }
+        .linha-dados td:nth-child(8) { background: #DCE6F1; }
+        .linha-dados td:nth-child(9) { background: #DCE6F1; }
+        .linha-dados:hover td { opacity: 0.85; }
+        .col-valor-entrada { color: #1a7a3a; font-weight: 600; }
+        .col-valor-despesa { color: #bc4e2c; font-weight: 600; }
+        .col-check { font-weight: 700; font-size: 14px; }
         .total-row td {
             background: #1A2A1A !important;
             color: #ffffff !important;
@@ -755,19 +927,13 @@
             border: 1px solid #000;
             font-size: 11px;
         }
-
         .total-row td:first-child {
             text-align: right;
             padding-right: 14px !important;
         }
-
         .total-row td:nth-child(3),
         .total-row td:nth-child(5),
-        .total-row td:nth-child(7) {
-            color: #a7f3d0 !important;
-        }
-
-        /* ===== CARDS DE RESUMO ===== */
+        .total-row td:nth-child(7) { color: #a7f3d0 !important; }
         .resumo-cards {
             display: flex;
             justify-content: center;
@@ -777,7 +943,6 @@
             background: #f5f5f5;
             border-top: 2px solid #000;
         }
-
         .card {
             width: 155px;
             font-family: Georgia, "Times New Roman", serif;
@@ -786,7 +951,6 @@
             border-radius: 4px;
             overflow: hidden;
         }
-
         .card h3 {
             background: #EFEFEF;
             padding: 8px;
@@ -796,7 +960,6 @@
             font-weight: 700;
             color: #1a1a2e;
         }
-
         .card p {
             padding: 12px;
             text-align: center;
@@ -804,14 +967,11 @@
             font-weight: 700;
             font-size: 16px;
         }
-
         .card-entrada p { background: #2F7D31; }
         .card-dinheiro p { background: #FFC000; color: #1a1a2e; }
         .card-pix p { background: #7EA6F0; }
         .card-despesas p { background: #CF2020; }
         .card-resultado p { background: ${resultadoCor}; }
-
-        /* ===== FOOTER ===== */
         .footer-pdf {
             text-align: center;
             font-size: 10px;
@@ -820,17 +980,9 @@
             border-top: 1px solid #dce0e6;
             background: #fff;
         }
-
-        /* ===== IMPRESSÃO ===== */
         @media print {
-            body {
-                background: white;
-                padding: 0;
-            }
-            .container {
-                box-shadow: none;
-                border-radius: 0;
-            }
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; border-radius: 0; }
             .header {
                 padding: 14px 20px;
                 background: #0f172a !important;
@@ -842,7 +994,6 @@
             .header-right .data { font-size: 13px; }
             .header-right .fluxo { font-size: 11px; padding: 4px 14px; }
             .table-wrapper { padding: 0; }
-
             .cabecalho th {
                 padding: 5px 4px;
                 font-size: 7px;
@@ -851,7 +1002,6 @@
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
-
             .linha-dados td {
                 padding: 4px 4px;
                 font-size: 8px;
@@ -868,7 +1018,6 @@
             .linha-dados td:nth-child(7) { background: #F4B6C1 !important; }
             .linha-dados td:nth-child(8) { background: #DCE6F1 !important; }
             .linha-dados td:nth-child(9) { background: #DCE6F1 !important; }
-
             .total-row td {
                 padding: 4px 4px !important;
                 font-size: 9px;
@@ -877,7 +1026,6 @@
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
-
             .resumo-cards {
                 padding: 12px 10px 16px;
                 gap: 8px;
@@ -900,7 +1048,6 @@
             .card-resultado p { background: ${resultadoCor} !important; }
             .footer-pdf { font-size: 8px; padding: 8px; }
         }
-
         @page {
             size: A4 landscape;
             margin: 5mm 8mm;
@@ -909,7 +1056,6 @@
 </head>
 <body>
     <div class="container">
-        <!-- HEADER -->
         <div class="header">
             <div class="header-left">
                 <h1>📊 Planilha de <span>Caixa</span> Diário</h1>
@@ -920,8 +1066,6 @@
                 <div class="fluxo">💰 Fluxo de Caixa</div>
             </div>
         </div>
-
-        <!-- TABELA -->
         <div class="table-wrapper">
             <table class="caixa">
                 <colgroup>
@@ -950,7 +1094,6 @@
                 </thead>
                 <tbody>`;
 
-        // ===== LINHAS DE DADOS =====
         for (let item of dadosPlanilha) {
             let isDinheiro = false;
             let isPixCartao = false;
@@ -984,7 +1127,6 @@
                     </tr>`;
         }
 
-        // ===== LINHAS VAZIAS =====
         const linhasExtras = Math.max(0, 18 - dadosPlanilha.length);
         for (let i = 0; i < linhasExtras; i++) {
             html += `
@@ -992,9 +1134,6 @@
                         <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
                     </tr>`;
         }
-
-        // ===== RODAPÉ =====
-        const totalSaida = totalDespesas + totalSangrias;
 
         html += `
                 </tbody>
@@ -1012,8 +1151,6 @@
                 </tfoot>
             </table>
         </div>
-
-        <!-- CARDS DE RESUMO -->
         <div class="resumo-cards">
             <div class="card card-entrada">
                 <h3>TOTAL DE ENTRADAS</h3>
@@ -1021,7 +1158,7 @@
             </div>
             <div class="card card-dinheiro">
                 <h3>SALDO EM DINHEIRO</h3>
-                <p>${formatarMoedaPDF(totalDinheiro)}</p>
+                <p>${formatarMoedaPDF(totalDinheiro - totalDespesas - totalSangrias)}</p>
             </div>
             <div class="card card-pix">
                 <h3>PIX/CARTÃO</h3>
@@ -1036,7 +1173,6 @@
                 <p>${resultadoSinal}${formatarMoedaPDF(Math.abs(resultado))}</p>
             </div>
         </div>
-
         <div class="footer-pdf">
             Gerado em ${new Date().toLocaleString('pt-BR')} · ${cidadeNome}
         </div>
@@ -1096,7 +1232,18 @@
 
         if (dadosPlanilha.length === 0) {
             tbody.innerHTML =
-                '<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text-muted);">Nenhum registro adicionado</td></tr>';
+                '<tr><td colspan="12"><div class="empty-table-state">' +
+                '<span class="empty-icon" aria-hidden="true">' +
+                '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+                '<rect x="2" y="8" width="20" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/>' +
+                '<rect x="5" y="4" width="14" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6"/>' +
+                '<circle cx="8" cy="14" r="1.2" fill="currentColor"/>' +
+                '<circle cx="12" cy="14" r="1.2" fill="currentColor"/>' +
+                '<circle cx="16" cy="14" r="1.2" fill="currentColor"/>' +
+                '<path d="M6 18h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>' +
+                '</svg></span>' +
+                '<div class="empty-text">Nenhum registro adicionado</div>' +
+                '</div></td></tr>';
             return;
         }
 
@@ -1169,7 +1316,7 @@
     }
 
     // ============================================================
-    // ATUALIZAR CARDS
+    // ATUALIZAR CARDS (DESPESAS SAEM APENAS DO SALDO DINHEIRO)
     // ============================================================
     function atualizarCardsResumo() {
         let totalEntradas = 0;
@@ -1197,16 +1344,26 @@
         }
 
         const totalDespesasGeral = totalDespesas + totalSangrias;
+
+        // TOTAL DE ENTRADAS = SÓ AS ENTRADAS (sem descontar despesas)
+        const totalEntradasFinal = totalEntradas;
+
+        // RESULTADO = TOTAL DE ENTRADAS - DESPESAS
         const resultado = totalEntradas - totalDespesasGeral;
 
-        const cardResultado = document.getElementById('cardResultado');
-        cardResultado.textContent = formatarMoeda(resultado);
-        cardResultado.className = 'card-value resultado';
-        if (resultado > 0) cardResultado.classList.add('positivo');
-        else if (resultado < 0) cardResultado.classList.add('negativo');
+        // SALDO EM DINHEIRO = DINHEIRO - DESPESAS (apenas isso)
+        const saldoDinheiroFinal = totalDinheiro - totalDespesasGeral;
 
-        document.getElementById('cardSaldoDinheiro').textContent = formatarMoeda(totalDinheiro);
-        document.getElementById('cardSaldoPix').textContent = formatarMoeda(totalPix);
+        // PIX/CARTÃO permanece igual (não sofre despesas)
+        const saldoPixFinal = totalPix;
+
+        // Card: TOTAL DE ENTRADAS/SAÍDAS - mostra APENAS as entradas
+        const cardResultado = document.getElementById('cardResultado');
+        cardResultado.textContent = formatarMoeda(totalEntradasFinal);
+        cardResultado.className = 'card-value resultado';
+
+        document.getElementById('cardSaldoDinheiro').textContent = formatarMoeda(saldoDinheiroFinal);
+        document.getElementById('cardSaldoPix').textContent = formatarMoeda(saldoPixFinal);
         document.getElementById('cardDespesas').textContent = formatarMoeda(totalDespesasGeral);
     }
 
@@ -1285,73 +1442,8 @@
     }
 
     // ============================================================
-    // GERAR HTML DO RECIBO (usado por impressão e salvar formatado)
+    // IMPRIMIR TODOS OS RECIBOS (5 POR FOLHA)
     // ============================================================
-    function gerarHTMLReciboIdentico(rec) {
-        if (!rec) return '';
-
-        let metodoStr = '';
-        if (rec.pagamentoParcial) {
-            const partes = [];
-            if ((rec.valorDinheiro || 0) > 0) partes.push(`Dinheiro: ${formatarMoeda(rec.valorDinheiro)}`);
-            if ((rec.valorPix || 0) > 0) partes.push(`PIX: ${formatarMoeda(rec.valorPix)}`);
-            if ((rec.valorCartao || 0) > 0) partes.push(`Cartão: ${formatarMoeda(rec.valorCartao)}`);
-            metodoStr = partes.join(' | ') || 'Pagamento Dividido';
-        } else {
-            metodoStr = rec.metodoPagamento || 'Dinheiro';
-        }
-
-        const nome = escapeHtml(rec.nome || '______________');
-        const login = escapeHtml(rec.login || '—');
-        const idContrato = escapeHtml(rec.idContrato || '—');
-        const data = rec.dataFormatada || formatarDataParaExibir(rec.data) || '—';
-        const referencia = rec.referenciaFormatada || formatarDataParaExibir(rec.referencia) || '—';
-        const valor = rec.valor || 'R$ 0,00';
-        const cidadeNome = getCidadeNome(cidadeAtual);
-
-        return `
-            <div class="recibo-form-card-print">
-                <div class="logo-recibo-print">
-                    <div style="font-size:18px;font-weight:700;color:#1e3a5f;letter-spacing:1px;">DK TELECOM</div>
-                    <div style="font-size:11px;color:#666;margin-top:2px;">${escapeHtml(cidadeNome)}</div>
-                </div>
-                <div class="recibo-linhas-print">
-                    <div class="linha-recibo-print">
-                        <label>NOME:</label>
-                        <span class="valor-print">${nome}</span>
-                    </div>
-                    <div class="linha-dupla-print">
-                        <div class="linha-recibo-print">
-                            <label>DATA:</label>
-                            <span class="valor-print">${data}</span>
-                        </div>
-                        <div class="linha-recibo-print">
-                            <label>MÊS REF:</label>
-                            <span class="valor-print">${referencia}</span>
-                        </div>
-                    </div>
-                    <div class="linha-recibo-print">
-                        <label>VALOR:</label>
-                        <span class="valor-print" style="font-weight:700;">${valor}</span>
-                    </div>
-                    <div class="linha-recibo-print">
-                        <label>PAGAMENTO:</label>
-                        <span class="valor-print">${escapeHtml(metodoStr)}</span>
-                    </div>
-                    <div class="linha-dupla-print">
-                        <div class="linha-recibo-print">
-                            <label>LOGIN:</label>
-                            <span class="valor-print">${login}</span>
-                        </div>
-                        <div class="linha-recibo-print">
-                            <label>ID:</label>
-                            <span class="valor-print">${idContrato}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>`;
-    }
-
     function imprimirTodosRecibos() {
         if (recibos.length === 0) {
             alert('❌ Nenhum recibo para imprimir!');
@@ -1446,12 +1538,22 @@
             border-top: 1px solid #ddd;
             padding-top: 8px;
         }
-        .recibo-form-card-print:nth-child(4n) { page-break-after: always; }
+        .recibo-form-card-print:nth-child(5n) { page-break-after: always; }
         @media print {
             body { padding: 5mm 8mm; }
-            .recibo-form-card-print { border: 1px solid #000; padding: 8px 12px; margin: 0 0 4px 0; font-size: 9px; }
-            .recibo-form-card-print .linha-recibo-print label { width: 60px; font-size: 8px; }
-            .recibo-form-card-print .linha-recibo-print .valor-print { font-size: 9px; padding: 1px 4px; }
+            .recibo-form-card-print { 
+                border: 1px solid #000; 
+                padding: 4px 8px; 
+                margin: 0 0 4px 0; 
+                font-size: 7px;
+                height: calc(19vh - 4px);
+                min-height: 75px;
+                max-height: 95px;
+            }
+            .recibo-form-card-print .linha-recibo-print label { width: 60px; font-size: 7px; }
+            .recibo-form-card-print .linha-recibo-print .valor-print { font-size: 8px; padding: 1px 4px; }
+            .recibo-form-card-print .logo-recibo-print img { max-width: 40px; }
+            .recibo-form-card-print:nth-child(5n) { page-break-after: always; }
         }
         @page { size: A4; margin: 10mm 15mm; }
     </style>
@@ -1644,444 +1746,9 @@
                 💰 Total: <strong>${formatarMoeda(calcularSomaRecibos())}</strong>
             `;
     }
+
     // ============================================================
-    // EXPORTAR EXCEL - COM FORMATAÇÃO VISUAL COMPLETA
-    // ============================================================
-    function exportarExcel() {
-        if (dadosPlanilha.length === 0) {
-            alert('❌ Nenhum dado para exportar!');
-            return;
-        }
-
-        const wb = XLSX.utils.book_new();
-        const dados = [];
-
-        const CORES = {
-            cinza: "D9D9D9",
-            azul: "DCE6F1",
-            verde: "D9EAD3",
-            rosa: "F4B6C1",
-            cardVerde: "2E7D32",
-            cardAmarelo: "FFC000",
-            cardAzul: "7EA6F0",
-            cardVermelho: "CF2020",
-            data: "FFB6C1",
-            fluxo: "4EA72E"
-        };
-
-        const cidade = getCidadeById(cidadeAtual);
-        const cidadeNome = cidade ? cidade.nome.toUpperCase() : 'DK TELECOM';
-        const dataAtual = new Date().toLocaleDateString('pt-BR');
-        const fluxoCaixa = 100;
-
-        // ===== LINHA 0: TÍTULO (10 COLUNAS) =====
-        dados.push([
-            `PLANILHA DE CAIXA DIÁRIO\nDK TELECOM - ${cidadeNome}`, // A (0)
-            "", // B (1)
-            "", // C (2)
-            "", // D (3)
-            "", // E (4)
-            "", // F (5)
-            dataAtual, // G (6) ← DATA
-            "", // H (7)
-            `FLUXO DE CAIXA R$${fluxoCaixa.toFixed(2).replace('.', ',')}`, // I (8) ← FLUXO
-            ""  // J (9)
-        ]);
-
-        // ===== LINHAS VAZIAS (1 a 4) =====
-        for (let i = 0; i < 4; i++) {
-            dados.push(["", "", "", "", "", "", "", "", "", ""]);
-        }
-
-        // ===== LINHA 5: CABEÇALHO =====
-        dados.push([
-            "VENCIMENTO",
-            "CLIENTE",
-            "VALOR",
-            "INSTALAÇÃO E INSTALADOR",
-            "VALOR",
-            "DESPESAS",
-            "VALOR",
-            "DINHEIRO",
-            "PIX/CARTÃO",
-            "USUÁRIO"
-        ]);
-
-        // ===== LINHAS DE DADOS =====
-        let totalMensalidades = 0;
-        let totalInstalacoes = 0;
-        let totalDespesas = 0;
-        let totalSangrias = 0;
-        let totalDinheiro = 0;
-        let totalPix = 0;
-        let totalEntradas = 0;
-
-        for (let item of dadosPlanilha) {
-            const entrada = (item.mensalidade || 0) + (item.instalacao || 0);
-
-            totalMensalidades += (item.mensalidade || 0);
-            totalInstalacoes += (item.instalacao || 0);
-            totalDespesas += (item.valorDespesa || 0);
-            totalSangrias += (item.sangria || 0);
-            totalEntradas += entrada;
-
-            let isDinheiro = false;
-            let isPixCartao = false;
-
-            if (item.pagamentoParcial) {
-                isDinheiro = (item.valorDinheiro || 0) > 0;
-                isPixCartao = (item.valorPix || 0) > 0 || (item.valorCartao || 0) > 0;
-                totalDinheiro += (item.valorDinheiro || 0);
-                totalPix += (item.valorPix || 0) + (item.valorCartao || 0);
-            } else {
-                isDinheiro = (item.metodoPagamento === 'Dinheiro');
-                isPixCartao = (item.metodoPagamento === 'PIX' || item.metodoPagamento === 'Cartão');
-                if (isDinheiro) totalDinheiro += entrada;
-                else if (isPixCartao) totalPix += entrada;
-            }
-
-            let clienteNome = item.cliente || '';
-            let dinheiroMark = isDinheiro ? 'X' : '';
-            let pixMark = isPixCartao ? 'X' : '';
-            let usuarioNome = item.usuarioId ? getUsuarioNome(item.usuarioId) : (item.usuario || 'Sistema');
-
-            dados.push([
-                item.vencimento || "",
-                clienteNome,
-                (item.mensalidade || 0) > 0 ? formatarMoeda(item.mensalidade) : "",
-                item.instalador || "",
-                (item.instalacao || 0) > 0 ? formatarMoeda(item.instalacao) : "",
-                item.despesas || "",
-                (item.valorDespesa || 0) > 0 ? formatarMoeda(item.valorDespesa) : "",
-                dinheiroMark,
-                pixMark,
-                usuarioNome
-            ]);
-        }
-
-        // ===== LINHAS VAZIAS ATÉ 25 LINHAS =====
-        const linhasExtras = Math.max(0, 25 - dadosPlanilha.length);
-        for (let i = 0; i < linhasExtras; i++) {
-            dados.push(["", "", "", "", "", "", "", "", "", ""]);
-        }
-
-        // ===== 1 LINHA VAZIA ENTRE A TABELA E OS CARDS =====
-        dados.push(["", "", "", "", "", "", "", "", "", ""]);
-
-        // ===== LINHA DOS CARDS (TÍTULOS) =====
-        dados.push([
-            "TOTAL DE ENTRADAS",
-            "",
-            "SALDO EM DINHEIRO",
-            "",
-            "PIX/CARTÃO",
-            "",
-            "DESPESAS",
-            "",
-            "",
-            ""
-        ]);
-
-        // ===== LINHA DOS CARDS (VALORES) =====
-        const totalEntradasCalculado = totalDinheiro + totalPix - totalDespesas;
-
-        dados.push([
-            totalEntradasCalculado > 0 ? formatarMoeda(totalEntradasCalculado) : "R$ 0,00",
-            "",
-            totalDinheiro > 0 ? formatarMoeda(totalDinheiro) : "R$ 0,00",
-            "",
-            totalPix > 0 ? formatarMoeda(totalPix) : "R$ 0,00",
-            "",
-            totalDespesas > 0 ? formatarMoeda(totalDespesas) : "R$ 0,00",
-            "",
-            "",
-            ""
-        ]);
-
-        // ===== LINHA VAZIA FINAL =====
-        dados.push(["", "", "", "", "", "", "", "", "", ""]);
-
-        const ws = XLSX.utils.aoa_to_sheet(dados);
-
-        // ===== MERGES =====
-        ws["!merges"] = [
-            { s: { r: 0, c: 0 }, e: { r: 4, c: 5 } }, // Título A-F
-            { s: { r: 0, c: 6 }, e: { r: 4, c: 7 } }, // Data G-H
-            { s: { r: 0, c: 8 }, e: { r: 4, c: 9 } }  // Fluxo I-J
-        ];
-
-        // ===== ESTILO DO CABEÇALHO PRINCIPAL (linhas 0 a 4) =====
-        for (let r = 0; r <= 4; r++) {
-            for (let c = 0; c <= 9; c++) {
-                const cell = XLSX.utils.encode_cell({ r, c });
-                if (!ws[cell]) ws[cell] = { t: 's', v: '' };
-
-                // Bordas apenas nas extremidades
-                const isTop = r === 0;
-                const isBottom = r === 4;
-                const isLeft = (c === 0) || (c === 6) || (c === 8);
-                const isRight = (c === 5) || (c === 7) || (c === 9);
-
-                const border = {
-                    top: isTop ? { style: "medium" } : undefined,
-                    bottom: isBottom ? { style: "medium" } : undefined,
-                    left: isLeft ? { style: "medium" } : undefined,
-                    right: isRight ? { style: "medium" } : undefined
-                };
-
-                if (c <= 5) {
-                    // Título (A-F)
-                    ws[cell].s = {
-                        font: { bold: true, sz: 24, name: "Georgia" },
-                        alignment: { horizontal: "center", vertical: "center", wrapText: true },
-                        fill: { fgColor: { rgb: CORES.cinza } },
-                        border: border
-                    };
-                } else if (c === 6 || c === 7) {
-                    // DATA (G-H)
-                    ws[cell].s = {
-                        font: { bold: true, sz: 18, color: { rgb: "900000" } },
-                        alignment: { horizontal: "center", vertical: "center" },
-                        fill: { fgColor: { rgb: CORES.data } },
-                        border: border
-                    };
-                } else {
-                    // FLUXO DE CAIXA (I-J)
-                    ws[cell].s = {
-                        font: { bold: true, sz: 14, color: { rgb: "000000" } },
-                        alignment: { horizontal: "center", vertical: "center" },
-                        fill: { fgColor: { rgb: CORES.fluxo } },
-                        border: border
-                    };
-                }
-            }
-        }
-
-        // ===== FORÇAR OS VALORES DA DATA E FLUXO (NÃO SOBRESCREVER) =====
-        // Data na célula G1 (coluna 6, linha 0)
-        const cellG1 = XLSX.utils.encode_cell({ r: 0, c: 6 });
-        ws[cellG1].v = dataAtual;
-        ws[cellG1].t = 's';
-
-        // Fluxo na célula I1 (coluna 8, linha 0)
-        const cellI1 = XLSX.utils.encode_cell({ r: 0, c: 8 });
-        ws[cellI1].v = `FLUXO DE CAIXA R$${fluxoCaixa.toFixed(2).replace('.', ',')}`;
-        ws[cellI1].t = 's';
-
-        // ===== ESTILO DOS CABEÇALHOS DA TABELA (LINHA 5) =====
-        for (let c = 0; c <= 9; c++) {
-            const cell = XLSX.utils.encode_cell({ r: 5, c });
-            if (!ws[cell]) continue;
-
-            let bg = CORES.cinza;
-            if (c === 2 || c === 4) bg = CORES.verde;
-            else if (c === 5 || c === 6) bg = CORES.rosa;
-            else if (c === 0 || c === 1 || c === 7 || c === 8 || c === 9) bg = CORES.azul;
-
-            ws[cell].s = {
-                font: { bold: true, sz: 11 },
-                fill: { fgColor: { rgb: bg } },
-                alignment: { horizontal: "center", vertical: "center", wrapText: true },
-                border: {
-                    top: { style: "medium" },
-                    bottom: { style: "medium" },
-                    left: { style: "thin" },
-                    right: { style: "thin" }
-                }
-            };
-        }
-
-        // ===== ESTILO DOS DADOS =====
-        const inicioDados = 6;
-        const linhaCardTitulo = dados.length - 3;
-        const linhaCardValores = dados.length - 2;
-        const fimDados = linhaCardTitulo;
-
-        for (let r = inicioDados; r < fimDados; r++) {
-            for (let c = 0; c <= 9; c++) {
-                const cell = XLSX.utils.encode_cell({ r, c });
-                if (!ws[cell]) continue;
-
-                let bgColor = CORES.azul;
-                if (c === 2 || c === 4) bgColor = CORES.verde;
-                else if (c === 5 || c === 6) bgColor = CORES.rosa;
-                else if (c === 7 || c === 8 || c === 9) bgColor = CORES.azul;
-
-                if (c === 1) {
-                    let valor = ws[cell].v;
-                    let temNome = valor && valor.trim() !== '';
-                    ws[cell].s = {
-                        font: { sz: temNome ? 14 : 12, bold: temNome ? true : false },
-                        fill: { fgColor: { rgb: bgColor } },
-                        alignment: { horizontal: "left", vertical: "center" },
-                        border: {
-                            top: { style: "thin" },
-                            bottom: { style: "thin" },
-                            left: { style: "thin" },
-                            right: { style: "thin" }
-                        }
-                    };
-                } else if (c === 5) {
-                    ws[cell].s = {
-                        font: { sz: 14, bold: true },
-                        fill: { fgColor: { rgb: bgColor } },
-                        alignment: { horizontal: "center", vertical: "center" },
-                        border: {
-                            top: { style: "thin" },
-                            bottom: { style: "thin" },
-                            left: { style: "thin" },
-                            right: { style: "thin" }
-                        }
-                    };
-                } else {
-                    ws[cell].s = {
-                        font: { sz: 12 },
-                        fill: { fgColor: { rgb: bgColor } },
-                        alignment: { horizontal: "center", vertical: "center" },
-                        border: {
-                            top: { style: "thin" },
-                            bottom: { style: "thin" },
-                            left: { style: "thin" },
-                            right: { style: "thin" }
-                        }
-                    };
-                }
-            }
-        }
-
-        // ===== ESTILO DOS CARDS =====
-        const coresCards = {
-            "TOTAL DE ENTRADAS": CORES.cardVerde,
-            "SALDO EM DINHEIRO": CORES.cardAmarelo,
-            "PIX/CARTÃO": CORES.cardAzul,
-            "DESPESAS": CORES.cardVermelho
-        };
-
-        const cardsConfig = [
-            { titulo: "TOTAL DE ENTRADAS", inicio: 0, fim: 1 },
-            { titulo: "SALDO EM DINHEIRO", inicio: 2, fim: 3 },
-            { titulo: "PIX/CARTÃO", inicio: 4, fim: 5 },
-            { titulo: "DESPESAS", inicio: 6, fim: 9 }
-        ];
-
-        for (const card of cardsConfig) {
-            ws["!merges"].push({ s: { r: linhaCardTitulo, c: card.inicio }, e: { r: linhaCardTitulo, c: card.fim } });
-            ws["!merges"].push({ s: { r: linhaCardValores, c: card.inicio }, e: { r: linhaCardValores, c: card.fim } });
-
-            for (let col = card.inicio; col <= card.fim; col++) {
-                const cTit = XLSX.utils.encode_cell({ r: linhaCardTitulo, c: col });
-                const cVal = XLSX.utils.encode_cell({ r: linhaCardValores, c: col });
-
-                if (!ws[cTit]) ws[cTit] = { t: 's', v: '' };
-                if (!ws[cVal]) ws[cVal] = { t: 's', v: '' };
-
-                const borderLeft = (col === card.inicio) ? { style: "medium" } : undefined;
-                const borderRight = (col === card.fim) ? { style: "medium" } : undefined;
-
-                ws[cTit].s = {
-                    font: { bold: true, sz: 10, name: "Arial", color: { rgb: "333333" } },
-                    fill: { fgColor: { rgb: "EFEFEF" } },
-                    alignment: { horizontal: "center", vertical: "center" },
-                    border: {
-                        top: { style: "medium" },
-                        bottom: { style: "thin" },
-                        left: borderLeft,
-                        right: borderRight
-                    }
-                };
-
-                let corFonte = card.titulo === "SALDO EM DINHEIRO" ? "000000" : "FFFFFF";
-
-                ws[cVal].s = {
-                    font: { bold: true, sz: 18, name: "Georgia", color: { rgb: corFonte } },
-                    fill: { fgColor: { rgb: coresCards[card.titulo] } },
-                    alignment: { horizontal: "center", vertical: "center" },
-                    border: {
-                        top: { style: "thin" },
-                        bottom: { style: "medium" },
-                        left: borderLeft,
-                        right: borderRight
-                    }
-                };
-            }
-        }
-
-        // ===== LARGURA DAS COLUNAS =====
-        ws["!cols"] = [
-            { wch: 18 }, // A - VENCIMENTO
-            { wch: 40 }, // B - CLIENTE
-            { wch: 13 }, // C - VALOR
-            { wch: 32 }, // D - INSTALAÇÃO E INSTALADOR
-            { wch: 13 }, // E - VALOR
-            { wch: 22 }, // F - DESPESAS
-            { wch: 14 }, // G - VALOR DESPESA
-            { wch: 12 }, // H - DINHEIRO
-            { wch: 12 }, // I - PIX/CARTÃO
-            { wch: 30 }  // J - USUÁRIO
-        ];
-
-        // ===== ALTURA DAS LINHAS =====
-        ws["!rows"] = Array(5).fill({ hpt: 30 });
-        ws["!rows"][5] = { hpt: 18 };
-
-        for (let i = 6; i < fimDados; i++) {
-            ws["!rows"][i] = { hpt: 24 };
-        }
-
-        ws["!rows"][linhaCardTitulo] = { hpt: 30 };
-        ws["!rows"][linhaCardValores] = { hpt: 65 };
-
-        XLSX.utils.book_append_sheet(wb, ws, "Caixa Diário");
-
-        const cidadeId = cidade ? cidade.id : 'diario';
-        XLSX.writeFile(wb, `caixa-${cidadeId}-${dataAtual.replace(/\//g, '-')}.xlsx`);
-
-        alert('📊 Excel exportado com sucesso!');
-    }
-    // ============================================================
-    // EXPORTAR PDF
-    // ============================================================
-    function exportarPDF() {
-        if (dadosPlanilha.length === 0) {
-            alert('❌ Nenhum dado para exportar!');
-            return;
-        }
-
-        const cidade = getCidadeById(cidadeAtual);
-        const container = document.createElement('div');
-        container.style.cssText = 'padding:20px; background:#f2f2f2; font-family:Arial, sans-serif; width:100%;';
-        container.innerHTML = gerarHTMLTabela(cidade);
-        document.body.appendChild(container);
-
-        // Verificar se html2pdf está disponível
-        if (typeof html2pdf === 'undefined') {
-            alert('❌ Biblioteca html2pdf não carregada. Tente recarregar a página.');
-            document.body.removeChild(container);
-            return;
-        }
-
-        html2pdf().set({
-            margin: 0.2,
-            filename: `caixa-${cidade ? cidade.id : 'diario'}-${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`,
-            image: { type: 'jpeg', quality: 1 },
-            html2canvas: { scale: 3, useCORS: true },
-            jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' }
-        }).from(container).save().then(function () {
-            document.body.removeChild(container);
-        }).catch(function (err) {
-            document.body.removeChild(container);
-            console.error('Erro ao exportar PDF:', err);
-            alert('❌ Erro ao exportar PDF: ' + err.message);
-        });
-
-        adicionarLog('📄 Exportou PDF', `${dadosPlanilha.length} registros`);
-    }
-
-
-    // GERAR HTML TABELA PARA PDF 
-    // ============================================================
-    // ============================================================
-    // EXPORTAR EXCEL - COM FORMATAÇÃO VISUAL COMPLETA
+    // EXPORTAR EXCEL
     // ============================================================
     function exportarExcel() {
         if (dadosPlanilha.length === 0) {
@@ -2110,26 +1777,19 @@
         const dataAtual = new Date().toLocaleDateString('pt-BR');
         const fluxoCaixa = 100;
 
-        // ===== LINHA 0: TÍTULO =====
         dados.push([
-            `PLANILHA DE CAIXA DIÁRIO\nDK TELECOM - ${cidadeNome}`, // A (0)
-            "", // B (1)
-            "", // C (2)
-            "", // D (3)
-            "", // E (4)
-            "", // F (5)
-            dataAtual, // G (6) ← DATA (célula superior esquerda do merge G:H)
-            "", // H (7)
-            `FLUXO DE CAIXA R$${fluxoCaixa.toFixed(2).replace('.', ',')}`, // I (8) ← FLUXO
-            ""  // J (9)
+            `PLANILHA DE CAIXA DIÁRIO\nDK TELECOM - ${cidadeNome}`,
+            "", "", "", "", "",
+            dataAtual,
+            "",
+            `FLUXO DE CAIXA R$${fluxoCaixa.toFixed(2).replace('.', ',')}`,
+            ""
         ]);
 
-        // ===== LINHAS VAZIAS =====
         for (let i = 0; i < 4; i++) {
             dados.push(["", "", "", "", "", "", "", "", "", ""]);
         }
 
-        // ===== LINHA 5: CABEÇALHO =====
         dados.push([
             "VENCIMENTO",
             "CLIENTE",
@@ -2143,7 +1803,6 @@
             "USUÁRIO"
         ]);
 
-        // ===== LINHAS DE DADOS =====
         let totalMensalidades = 0;
         let totalInstalacoes = 0;
         let totalDespesas = 0;
@@ -2162,7 +1821,6 @@
             totalSangrias += (item.sangria || 0);
             totalEntradas += entrada;
 
-            // Verificar se é pagamento parcial
             let isDinheiro = false;
             let isPixCartao = false;
 
@@ -2197,16 +1855,13 @@
             ]);
         }
 
-        // ===== LINHAS VAZIAS ATÉ 25 LINHAS =====
         const linhasExtras = Math.max(0, 25 - dadosPlanilha.length);
         for (let i = 0; i < linhasExtras; i++) {
             dados.push(["", "", "", "", "", "", "", "", "", ""]);
         }
 
-        // ===== 1 LINHA VAZIA ENTRE A TABELA E OS CARDS =====
         dados.push(["", "", "", "", "", "", "", "", "", ""]);
 
-        // ===== LINHA DOS CARDS (TÍTULOS) =====
         dados.push([
             "TOTAL DE ENTRADAS",
             "",
@@ -2220,13 +1875,13 @@
             ""
         ]);
 
-        // ===== LINHA DOS CARDS (VALORES) =====
+        const saldoDinheiroFinal = totalDinheiro - totalDespesas - totalSangrias;
         const totalEntradasCalculado = totalDinheiro + totalPix - totalDespesas;
 
         dados.push([
             totalEntradasCalculado > 0 ? formatarMoeda(totalEntradasCalculado) : "R$ 0,00",
             "",
-            totalDinheiro > 0 ? formatarMoeda(totalDinheiro) : "R$ 0,00",
+            saldoDinheiroFinal > 0 ? formatarMoeda(saldoDinheiroFinal) : "R$ 0,00",
             "",
             totalPix > 0 ? formatarMoeda(totalPix) : "R$ 0,00",
             "",
@@ -2236,24 +1891,16 @@
             ""
         ]);
 
-        // ===== LINHA VAZIA FINAL =====
         dados.push(["", "", "", "", "", "", "", "", "", ""]);
 
         const ws = XLSX.utils.aoa_to_sheet(dados);
 
-        // ===== MERGES CORRIGIDOS =====
         ws["!merges"] = [
-            // Título: A até F (colunas 0 a 5) — linhas 0 a 4
             { s: { r: 0, c: 0 }, e: { r: 4, c: 5 } },
-
-            // DATA: G + H (colunas 6 e 7) — linhas 0 a 4
             { s: { r: 0, c: 6 }, e: { r: 4, c: 7 } },
-
-            // FLUXO DE CAIXA: I + J (colunas 8 e 9) — linhas 0 a 4
             { s: { r: 0, c: 8 }, e: { r: 4, c: 9 } }
         ];
 
-        // ===== ESTILO DO CABEÇALHO PRINCIPAL =====
         for (let r = 0; r <= 4; r++) {
             for (let c = 0; c <= 9; c++) {
                 const cell = XLSX.utils.encode_cell({ r, c });
@@ -2284,8 +1931,6 @@
             }
         }
 
-
-        // ===== FORÇAR VALORES DA DATA E FLUXO (topo-esquerdo dos merges) =====
         const cellG1 = XLSX.utils.encode_cell({ r: 0, c: 6 });
         if (!ws[cellG1]) ws[cellG1] = { t: 's', v: '' };
         ws[cellG1].v = dataAtual;
@@ -2296,7 +1941,6 @@
         ws[cellI1].v = `FLUXO DE CAIXA R$${fluxoCaixa.toFixed(2).replace('.', ',')}`;
         ws[cellI1].t = 's';
 
-        // ===== ESTILO DOS CABEÇALHOS DA TABELA (LINHA 5) =====
         for (let c = 0; c <= 9; c++) {
             const cell = XLSX.utils.encode_cell({ r: 5, c });
             if (!ws[cell]) continue;
@@ -2313,7 +1957,6 @@
             };
         }
 
-        // ===== ESTILO DOS DADOS =====
         const inicioDados = 6;
         const linhaCardTitulo = dados.length - 3;
         const linhaCardValores = dados.length - 2;
@@ -2326,7 +1969,7 @@
                 let bgColor = CORES.azul;
                 if (c === 2 || c === 4) bgColor = CORES.verde;
                 else if (c === 5 || c === 6) bgColor = CORES.rosa;
-                else if (c === 7 || c === 8 || c === 9) bgColor = CORES.azul; // Dinheiro, PIX e Usuário com azul
+                else if (c === 7 || c === 8 || c === 9) bgColor = CORES.azul;
 
                 if (c === 1) {
                     let valor = ws[cell].v;
@@ -2355,7 +1998,6 @@
             }
         }
 
-        // ===== ESTILO DOS CARDS =====
         const coresCards = {
             "TOTAL DE ENTRADAS": CORES.cardVerde,
             "SALDO EM DINHEIRO": CORES.cardAmarelo,
@@ -2411,21 +2053,19 @@
             }
         }
 
-        // ===== LARGURA DAS COLUNAS =====
         ws["!cols"] = [
-            { wch: 18 },  // Coluna A - VENCIMENTO
-            { wch: 40 },  // Coluna B - CLIENTE
-            { wch: 13 },  // Coluna C - VALOR
-            { wch: 32 },  // Coluna D - INSTALAÇÃO E INSTALADOR
-            { wch: 13 },  // Coluna E - VALOR
-            { wch: 22 },  // Coluna F - DESPESAS
-            { wch: 16 },  // Coluna G - VALOR DESPESA
-            { wch: 12 },  // Coluna H - DINHEIRO
-            { wch: 12 },  // Coluna I - PIX/CARTÃO
-            { wch: 21 }   // Coluna J - USUÁRIO
+            { wch: 18 },
+            { wch: 40 },
+            { wch: 13 },
+            { wch: 32 },
+            { wch: 13 },
+            { wch: 22 },
+            { wch: 16 },
+            { wch: 12 },
+            { wch: 12 },
+            { wch: 21 }
         ];
 
-        // ===== ALTURA DAS LINHAS =====
         ws["!rows"] = Array(5).fill({ hpt: 30 });
         ws["!rows"][5] = { hpt: 18 };
         for (let i = 6; i < fimDados; i++) {
@@ -2441,10 +2081,46 @@
     }
 
     // ============================================================
+    // EXPORTAR PDF
+    // ============================================================
+    function exportarPDF() {
+        if (dadosPlanilha.length === 0) {
+            alert('❌ Nenhum dado para exportar!');
+            return;
+        }
+
+        const cidade = getCidadeById(cidadeAtual);
+        const container = document.createElement('div');
+        container.style.cssText = 'padding:20px; background:#f2f2f2; font-family:Arial, sans-serif; width:100%;';
+        container.innerHTML = gerarHTMLTabela(cidade);
+        document.body.appendChild(container);
+
+        if (typeof html2pdf === 'undefined') {
+            alert('❌ Biblioteca html2pdf não carregada. Tente recarregar a página.');
+            document.body.removeChild(container);
+            return;
+        }
+
+        html2pdf().set({
+            margin: 0.2,
+            filename: `caixa-${cidade ? cidade.id : 'diario'}-${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`,
+            image: { type: 'jpeg', quality: 1 },
+            html2canvas: { scale: 3, useCORS: true },
+            jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' }
+        }).from(container).save().then(function () {
+            document.body.removeChild(container);
+        }).catch(function (err) {
+            document.body.removeChild(container);
+            console.error('Erro ao exportar PDF:', err);
+            alert('❌ Erro ao exportar PDF: ' + err.message);
+        });
+
+        adicionarLog('📄 Exportou PDF', `${dadosPlanilha.length} registros`);
+    }
+
+    // ============================================================
     // FUNÇÕES DE IMPRESSÃO E EXPORTAÇÃO DE RECIBOS
     // ============================================================
-
-
     function exportarRecibosParaWord() {
         if (recibos.length === 0) { alert('❌ Nenhum recibo para exportar!'); return; }
         const cidade = getCidadeById(cidadeAtual);
@@ -2471,276 +2147,276 @@
         adicionarLog('📄 Exportou recibos para Word', `${recibos.length} recibos`);
     }
 
-function exportarRecibosParaExcel() {
-    if (recibos.length === 0) {
-        alert('❌ Nenhum recibo para exportar!');
-        return;
-    }
+    function exportarRecibosParaExcel() {
+        if (recibos.length === 0) {
+            alert('❌ Nenhum recibo para exportar!');
+            return;
+        }
 
-    const cidade = getCidadeById(cidadeAtual);
-    const dataAtual = new Date().toLocaleDateString('pt-BR');
-    const totalGeral = calcularSomaRecibos();
-    const mediaPorRecibo = recibos.length > 0 ? totalGeral / recibos.length : 0;
+        const cidade = getCidadeById(cidadeAtual);
+        const dataAtual = new Date().toLocaleDateString('pt-BR');
+        const totalGeral = calcularSomaRecibos();
+        const mediaPorRecibo = recibos.length > 0 ? totalGeral / recibos.length : 0;
 
-    let html = `
-    <html xmlns:o="urn:schemas-microsoft-com:office:office"
-          xmlns:x="urn:schemas-microsoft-com:office:excel"
-          xmlns="http://www.w3.org/TR/REC-html40">
-    <head>
-        <meta charset="UTF-8">
-        <!--[if gte mso 9]>
-        <xml>
-            <x:ExcelWorkbook>
-                <x:ExcelWorksheets>
-                    <x:ExcelWorksheet>
-                        <x:Name>Recibos</x:Name>
-                        <x:WorksheetOptions>
-                            <x:DisplayGridlines/>
-                        </x:WorksheetOptions>
-                    </x:ExcelWorksheet>
-                </x:ExcelWorksheets>
-            </x:ExcelWorkbook>
-        </xml>
-        <![endif]-->
-        <style>
-            body {
-                font-family: Calibri, Arial, sans-serif;
-                margin: 0;
-                padding: 28px;
-                color: #1f2937;
-            }
-            .header {
-                margin-bottom: 32px;
-                border-bottom: 4px solid #1e3a5f;
-                padding-bottom: 16px;
-            }
-            .titulo {
-                font-size: 30px;
-                font-weight: 700;
-                color: #1e3a5f;
-                margin: 0 0 8px 0;
-                letter-spacing: 0.6px;
-            }
-            .subtitulo {
-                font-size: 17px;
-                color: #6b7280;
-                margin: 0;
-            }
-            table {
-                border-collapse: collapse;
-                width: 100%;
-                font-size: 16px;
-            }
-            th {
-                background-color: #1e3a5f;
-                color: #ffffff;
-                font-weight: 700;
-                padding: 20px 14px;
-                border: 1px solid #1e3a5f;
-                text-align: center;
-                font-size: 16px;
-                letter-spacing: 0.5px;
-            }
-            td {
-                padding: 18px 14px;
-                border: 1px solid #d1d5db;
-                text-align: center;
-                vertical-align: middle;
-                font-size: 16px;
-            }
-            tr:nth-child(even) td {
-                background-color: #f8fafc;
-            }
-            td.nome {
-                text-align: left;
-                font-weight: 600;
-                color: #111827;
-                font-size: 16px;
-            }
-            td.valor {
-                text-align: right;
-                font-family: 'Consolas', 'Courier New', monospace;
-                font-weight: 700;
-                font-size: 16px;
-            }
-            .total-row td {
-                background-color: #1e3a5f !important;
-                color: #ffffff !important;
-                font-weight: 700;
-                font-size: 17px;
-                border: 1px solid #1e3a5f;
-                padding: 20px 14px;
-            }
-            .resumo-container {
-                margin-top: 42px;
-            }
-            .resumo-titulo {
-                font-size: 17px;
-                font-weight: 700;
-                color: #1e3a5f;
-                margin-bottom: 14px;
-                letter-spacing: 0.5px;
-            }
-            .cards {
-                border-collapse: separate;
-                border-spacing: 14px 0;
-                width: 100%;
-            }
-            .cards td {
-                border: none;
-                padding: 0;
-                width: 25%;
-            }
-            .card {
-                border-radius: 8px;
-                padding: 22px 16px;
-                text-align: center;
-                border: 1px solid transparent;
-            }
-            .card-label {
-                font-size: 13px;
-                font-weight: 600;
-                letter-spacing: 0.6px;
-                text-transform: uppercase;
-                margin-bottom: 10px;
-                opacity: 0.95;
-            }
-            .card-value {
-                font-size: 26px;
-                font-weight: 700;
-            }
-            .card-azul {
-                background-color: #1e3a5f;
-                color: #ffffff;
-            }
-            .card-verde {
-                background-color: #166534;
-                color: #ffffff;
-            }
-            .card-amarelo {
-                background-color: #b45309;
-                color: #ffffff;
-            }
-            .card-cinza {
-                background-color: #374151;
-                color: #ffffff;
-            }
-            .footer {
-                margin-top: 42px;
-                font-size: 12px;
-                color: #9ca3af;
-                text-align: center;
-                border-top: 1px solid #e5e7eb;
-                padding-top: 14px;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <div class="titulo">PRESTAÇÃO DE CONTAS — DK TELECOM</div>
-            <div class="subtitulo">
-                ${cidade ? cidade.nome.toUpperCase() : 'TODAS AS CIDADES'} &nbsp;•&nbsp; ${dataAtual} &nbsp;•&nbsp; ${recibos.length} recibo(s)
+        let html = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office"
+              xmlns:x="urn:schemas-microsoft-com:office:excel"
+              xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+            <meta charset="UTF-8">
+            <!--[if gte mso 9]>
+            <xml>
+                <x:ExcelWorkbook>
+                    <x:ExcelWorksheets>
+                        <x:ExcelWorksheet>
+                            <x:Name>Recibos</x:Name>
+                            <x:WorksheetOptions>
+                                <x:DisplayGridlines/>
+                            </x:WorksheetOptions>
+                        </x:ExcelWorksheet>
+                    </x:ExcelWorksheets>
+                </x:ExcelWorkbook>
+            </xml>
+            <![endif]-->
+            <style>
+                body {
+                    font-family: Calibri, Arial, sans-serif;
+                    margin: 0;
+                    padding: 28px;
+                    color: #1f2937;
+                }
+                .header {
+                    margin-bottom: 32px;
+                    border-bottom: 4px solid #1e3a5f;
+                    padding-bottom: 16px;
+                }
+                .titulo {
+                    font-size: 30px;
+                    font-weight: 700;
+                    color: #1e3a5f;
+                    margin: 0 0 8px 0;
+                    letter-spacing: 0.6px;
+                }
+                .subtitulo {
+                    font-size: 17px;
+                    color: #6b7280;
+                    margin: 0;
+                }
+                table {
+                    border-collapse: collapse;
+                    width: 100%;
+                    font-size: 16px;
+                }
+                th {
+                    background-color: #1e3a5f;
+                    color: #ffffff;
+                    font-weight: 700;
+                    padding: 20px 14px;
+                    border: 1px solid #1e3a5f;
+                    text-align: center;
+                    font-size: 16px;
+                    letter-spacing: 0.5px;
+                }
+                td {
+                    padding: 18px 14px;
+                    border: 1px solid #d1d5db;
+                    text-align: center;
+                    vertical-align: middle;
+                    font-size: 16px;
+                }
+                tr:nth-child(even) td {
+                    background-color: #f8fafc;
+                }
+                td.nome {
+                    text-align: left;
+                    font-weight: 600;
+                    color: #111827;
+                    font-size: 16px;
+                }
+                td.valor {
+                    text-align: right;
+                    font-family: 'Consolas', 'Courier New', monospace;
+                    font-weight: 700;
+                    font-size: 16px;
+                }
+                .total-row td {
+                    background-color: #1e3a5f !important;
+                    color: #ffffff !important;
+                    font-weight: 700;
+                    font-size: 17px;
+                    border: 1px solid #1e3a5f;
+                    padding: 20px 14px;
+                }
+                .resumo-container {
+                    margin-top: 42px;
+                }
+                .resumo-titulo {
+                    font-size: 17px;
+                    font-weight: 700;
+                    color: #1e3a5f;
+                    margin-bottom: 14px;
+                    letter-spacing: 0.5px;
+                }
+                .cards {
+                    border-collapse: separate;
+                    border-spacing: 14px 0;
+                    width: 100%;
+                }
+                .cards td {
+                    border: none;
+                    padding: 0;
+                    width: 25%;
+                }
+                .card {
+                    border-radius: 8px;
+                    padding: 22px 16px;
+                    text-align: center;
+                    border: 1px solid transparent;
+                }
+                .card-label {
+                    font-size: 13px;
+                    font-weight: 600;
+                    letter-spacing: 0.6px;
+                    text-transform: uppercase;
+                    margin-bottom: 10px;
+                    opacity: 0.95;
+                }
+                .card-value {
+                    font-size: 26px;
+                    font-weight: 700;
+                }
+                .card-azul {
+                    background-color: #1e3a5f;
+                    color: #ffffff;
+                }
+                .card-verde {
+                    background-color: #166534;
+                    color: #ffffff;
+                }
+                .card-amarelo {
+                    background-color: #b45309;
+                    color: #ffffff;
+                }
+                .card-cinza {
+                    background-color: #374151;
+                    color: #ffffff;
+                }
+                .footer {
+                    margin-top: 42px;
+                    font-size: 12px;
+                    color: #9ca3af;
+                    text-align: center;
+                    border-top: 1px solid #e5e7eb;
+                    padding-top: 14px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="titulo">PRESTAÇÃO DE CONTAS — DK TELECOM</div>
+                <div class="subtitulo">
+                    ${cidade ? cidade.nome.toUpperCase() : 'TODAS AS CIDADES'} &nbsp;•&nbsp; ${dataAtual} &nbsp;•&nbsp; ${recibos.length} recibo(s)
+                </div>
             </div>
-        </div>
 
-        <table>
-            <thead>
-                <tr>
-                    <th style="width:28%;">NOME DO CLIENTE</th>
-                    <th style="width:13%;">DATA PAGAMENTO</th>
-                    <th style="width:13%;">VALOR</th>
-                    <th style="width:22%;">FORMA DE PAGAMENTO</th>
-                    <th style="width:12%;">LOGIN</th>
-                    <th style="width:12%;">ID CONTRATO</th>
-                </tr>
-            </thead>
-            <tbody>`;
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:28%;">NOME DO CLIENTE</th>
+                        <th style="width:13%;">DATA PAGAMENTO</th>
+                        <th style="width:13%;">VALOR</th>
+                        <th style="width:22%;">FORMA DE PAGAMENTO</th>
+                        <th style="width:12%;">LOGIN</th>
+                        <th style="width:12%;">ID CONTRATO</th>
+                    </tr>
+                </thead>
+                <tbody>`;
 
-    for (let rec of recibos) {
-        const valorNum = rec.valorNumerico || extrairNumeroDoValor(rec.valor) || 0;
-        let metodoStr = '';
+        for (let rec of recibos) {
+            const valorNum = rec.valorNumerico || extrairNumeroDoValor(rec.valor) || 0;
+            let metodoStr = '';
 
-        if (rec.pagamentoParcial) {
-            const partes = [];
-            if (rec.valorDinheiro > 0) partes.push(`Dinheiro: ${formatarMoeda(rec.valorDinheiro)}`);
-            if (rec.valorPix > 0) partes.push(`PIX: ${formatarMoeda(rec.valorPix)}`);
-            if (rec.valorCartao > 0) partes.push(`Cartão: ${formatarMoeda(rec.valorCartao)}`);
-            metodoStr = partes.join(' | ');
-        } else {
-            metodoStr = rec.metodoPagamento || '—';
+            if (rec.pagamentoParcial) {
+                const partes = [];
+                if (rec.valorDinheiro > 0) partes.push(`Dinheiro: ${formatarMoeda(rec.valorDinheiro)}`);
+                if (rec.valorPix > 0) partes.push(`PIX: ${formatarMoeda(rec.valorPix)}`);
+                if (rec.valorCartao > 0) partes.push(`Cartão: ${formatarMoeda(rec.valorCartao)}`);
+                metodoStr = partes.join(' | ');
+            } else {
+                metodoStr = rec.metodoPagamento || '—';
+            }
+
+            html += `
+                    <tr>
+                        <td class="nome">${rec.nome || '—'}</td>
+                        <td>${rec.dataFormatada || '—'}</td>
+                        <td class="valor">R$ ${valorNum.toFixed(2).replace('.', ',')}</td>
+                        <td>${metodoStr}</td>
+                        <td>${rec.login || '—'}</td>
+                        <td>${rec.idContrato || '—'}</td>
+                    </tr>`;
         }
 
         html += `
-                <tr>
-                    <td class="nome">${rec.nome || '—'}</td>
-                    <td>${rec.dataFormatada || '—'}</td>
-                    <td class="valor">R$ ${valorNum.toFixed(2).replace('.', ',')}</td>
-                    <td>${metodoStr}</td>
-                    <td>${rec.login || '—'}</td>
-                    <td>${rec.idContrato || '—'}</td>
-                </tr>`;
-    }
-
-    html += `
-            </tbody>
-            <tfoot>
-                <tr class="total-row">
-                    <td colspan="2" style="text-align:right; padding-right:18px;">TOTAL GERAL</td>
-                    <td class="valor">R$ ${totalGeral.toFixed(2).replace('.', ',')}</td>
-                    <td colspan="3"></td>
-                </tr>
-            </tfoot>
-        </table>
-
-        <div class="resumo-container">
-            <div class="resumo-titulo">RESUMO EXECUTIVO</div>
-            <table class="cards">
-                <tr>
-                    <td>
-                        <div class="card card-azul">
-                            <div class="card-label">Total de Recibos</div>
-                            <div class="card-value">${recibos.length}</div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="card card-verde">
-                            <div class="card-label">Valor Total</div>
-                            <div class="card-value">R$ ${totalGeral.toFixed(2).replace('.', ',')}</div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="card card-amarelo">
-                            <div class="card-label">Média por Recibo</div>
-                            <div class="card-value">R$ ${mediaPorRecibo.toFixed(2).replace('.', ',')}</div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="card card-cinza">
-                            <div class="card-label">Cidade</div>
-                            <div class="card-value" style="font-size:20px;">${cidade ? cidade.nome.toUpperCase() : 'GERAL'}</div>
-                        </div>
-                    </td>
-                </tr>
+                </tbody>
+                <tfoot>
+                    <tr class="total-row">
+                        <td colspan="2" style="text-align:right; padding-right:18px;">TOTAL GERAL</td>
+                        <td class="valor">R$ ${totalGeral.toFixed(2).replace('.', ',')}</td>
+                        <td colspan="3"></td>
+                    </tr>
+                </tfoot>
             </table>
-        </div>
 
-        <div class="footer">
-            Documento gerado automaticamente pelo sistema DK Telecom • ${new Date().toLocaleString('pt-BR')}
-        </div>
-    </body>
-    </html>`;
+            <div class="resumo-container">
+                <div class="resumo-titulo">RESUMO EXECUTIVO</div>
+                <table class="cards">
+                    <tr>
+                        <td>
+                            <div class="card card-azul">
+                                <div class="card-label">Total de Recibos</div>
+                                <div class="card-value">${recibos.length}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="card card-verde">
+                                <div class="card-label">Valor Total</div>
+                                <div class="card-value">R$ ${totalGeral.toFixed(2).replace('.', ',')}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="card card-amarelo">
+                                <div class="card-label">Média por Recibo</div>
+                                <div class="card-value">R$ ${mediaPorRecibo.toFixed(2).replace('.', ',')}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="card card-cinza">
+                                <div class="card-label">Cidade</div>
+                                <div class="card-value" style="font-size:20px;">${cidade ? cidade.nome.toUpperCase() : 'GERAL'}</div>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
 
-    const blob = new Blob(['\ufeff' + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `RECIBOS_${cidade ? cidade.id.toUpperCase() : 'DK'}_${dataAtual.replace(/\//g, '-')}.xls`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+            <div class="footer">
+                Documento gerado automaticamente pelo sistema DK Telecom • ${new Date().toLocaleString('pt-BR')}
+            </div>
+        </body>
+        </html>`;
 
-    adicionarLog('📊 Exportou recibos para Excel formatado', `${recibos.length} recibos`);
-    alert('📊 Recibos exportados com sucesso!');
-}
+        const blob = new Blob(['\ufeff' + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `RECIBOS_${cidade ? cidade.id.toUpperCase() : 'DK'}_${dataAtual.replace(/\//g, '-')}.xls`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        adicionarLog('📊 Exportou recibos para Excel formatado', `${recibos.length} recibos`);
+        alert('📊 Recibos exportados com sucesso!');
+    }
 
     function excluirTodosRecibos() {
         if (recibos.length === 0) { alert('❌ Nenhum recibo para excluir.'); return; }
@@ -2837,6 +2513,7 @@ function exportarRecibosParaExcel() {
         salvarDadosCidade();
         renderizarTabela();
         atualizarCardsResumo();
+
         adicionarLog('📄 Criou recibo', `${nome} - ${valorRaw}`);
         adicionarAuditoria('Recibo', nome, valorTotal, 'Criou', usuarioId);
         alert(`✅ Recibo de ${nome} salvo com sucesso!`);
@@ -3100,6 +2777,9 @@ function exportarRecibosParaExcel() {
         }
     };
 
+    // ============================================================
+    // FUNÇÕES ADMIN
+    // ============================================================
     function atualizarAdminDashboard() {
         const cidadesAtivas = cidades.filter(c => c.ativo !== false);
         document.getElementById('adminTotalCidades').textContent = cidadesAtivas.length;
@@ -3419,6 +3099,14 @@ function exportarRecibosParaExcel() {
     function popularSelectCidadesLogin() {
         const select = document.getElementById('loginCidade');
         select.innerHTML = '';
+
+        if (supabaseDisponivel() && cidades.length === 0) {
+            carregarCidades().then(() => {
+                popularSelectCidadesLogin();
+            });
+            return;
+        }
+
         for (let c of cidades) {
             if (c.ativo === false) continue;
             const opt = document.createElement('option');
@@ -3457,41 +3145,40 @@ function exportarRecibosParaExcel() {
         const cidade = getCidadeById(cidadeAtual);
         const cidadeNome = cidade ? cidade.nome : '—';
         const nomeUser = usuarioLogado ? (usuarioLogado.nome || usuarioLogado.login) : 'Carregando...';
-        const primeiroNome = (nomeUser || '').split(' ')[0] || 'Usuário';
+        const nivel = usuarioLogado
+            ? (usuarioLogado.nivel === 'admin' ? 'Administrador' : 'Usuário')
+            : '—';
 
-        // Sidebar (logo permanece no HTML)
         const sidebarEl = document.getElementById('sidebarCidade');
         if (sidebarEl) {
             sidebarEl.textContent = cidadeNome !== '—' ? `📍 ${cidadeNome}` : '📍 Sem cidade';
         }
 
-        // Saudação com animação suave
-        const welcomeEl = document.getElementById('headerWelcome');
-        const cidadeEl = document.getElementById('headerCidade');
-        const userEl = document.getElementById('headerUsuario');
-
-        if (welcomeEl) {
-            welcomeEl.textContent = `👋 Olá, ${primeiroNome}!`;
-            welcomeEl.classList.remove('animating');
-            void welcomeEl.offsetWidth; // reinicia animação
-            welcomeEl.classList.add('animating');
-        }
-        if (cidadeEl) {
-            cidadeEl.textContent = cidadeNome !== '—'
-                ? `Caixa diário · ${cidadeNome}`
-                : 'Caixa diário';
-            cidadeEl.classList.remove('animating');
-            void cidadeEl.offsetWidth;
-            cidadeEl.classList.add('animating');
-        }
-        if (userEl) {
-            userEl.innerHTML = `👤 <strong>${nomeUser}</strong>`;
-            userEl.classList.remove('animating');
-            void userEl.offsetWidth;
-            userEl.classList.add('animating');
+        const tituloEl = document.getElementById('headerCidade');
+        if (tituloEl) {
+            tituloEl.textContent = cidadeNome !== '—'
+                ? `Caixa Diário - ${cidadeNome}`
+                : 'Caixa Diário';
+            tituloEl.classList.remove('animating');
+            void tituloEl.offsetWidth;
+            tituloEl.classList.add('animating');
         }
 
-        // Paineis
+        const nameEl = document.getElementById('headerUserName');
+        const roleEl = document.getElementById('headerUserRole');
+        const avatarEl = document.getElementById('headerUserAvatar');
+        if (nameEl) nameEl.textContent = nomeUser;
+        if (roleEl) roleEl.textContent = nivel;
+        if (avatarEl) {
+            const iniciais = (nomeUser || 'U')
+                .split(' ')
+                .filter(Boolean)
+                .slice(0, 2)
+                .map(p => p.charAt(0).toUpperCase())
+                .join('') || 'U';
+            avatarEl.textContent = iniciais;
+        }
+
         const setTxt = (id, val) => {
             const el = document.getElementById(id);
             if (el) el.textContent = val;
@@ -3589,13 +3276,13 @@ function exportarRecibosParaExcel() {
     // ============================================================
     // INICIALIZAÇÃO
     // ============================================================
-    document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', async function () {
         aplicarTema(theme);
         document.getElementById('dataAtual').innerText = new Date().toLocaleDateString('pt-BR');
         document.getElementById('vencimento').value = new Date().toISOString().split('T')[0];
 
-        carregarUsuarios();
-        carregarCidades();
+        await carregarUsuarios();
+        await carregarCidades();
         carregarLogs();
         carregarAuditoria();
         popularSelectCidadesLogin();
@@ -3614,8 +3301,7 @@ function exportarRecibosParaExcel() {
         // EVENT LISTENERS
         // ============================================================
 
-        // Login
-        document.getElementById('btnLogin').addEventListener('click', function () {
+        document.getElementById('btnLogin').addEventListener('click', async function () {
             const login = document.getElementById('loginUsuario').value.trim();
             const senha = document.getElementById('loginSenha').value;
             const cidade = document.getElementById('loginCidade').value;
@@ -3626,7 +3312,7 @@ function exportarRecibosParaExcel() {
                 return;
             }
 
-            if (fazerLogin(login, senha, cidade)) {
+            if (await fazerLogin(login, senha, cidade)) {
                 document.getElementById('loginContainer').classList.add('hidden');
                 document.getElementById('appLayout').style.display = 'flex';
                 carregarDadosCidade(cidade);
@@ -3643,10 +3329,8 @@ function exportarRecibosParaExcel() {
             if (e.key === 'Enter') document.getElementById('loginSenha').focus();
         });
 
-        // Logout
         document.getElementById('btnLogout').addEventListener('click', logout);
 
-        // Sidebar
         document.getElementById('btnAbrirPanel').addEventListener('click', function () {
             abrirPanel(document.getElementById('panel'));
         });
@@ -3664,7 +3348,6 @@ function exportarRecibosParaExcel() {
         document.getElementById('btnLimparTudo').addEventListener('click', limparPlanilha);
         document.getElementById('btnToggleTheme').addEventListener('click', toggleTheme);
 
-        // Backup
         document.getElementById('btnBackup').addEventListener('click', function () {
             abrirPanel(document.getElementById('panelBackup'));
             atualizarInfoBackup();
@@ -3677,7 +3360,6 @@ function exportarRecibosParaExcel() {
         document.getElementById('btnExportarBackupExcel').addEventListener('click', exportarBackupExcel);
         document.getElementById('btnSalvarRecibosFormatadosBackup').addEventListener('click', salvarRecibosFormatados);
 
-        // Admin
         document.getElementById('btnAdmin').addEventListener('click', function () {
             if (usuarioLogado && usuarioLogado.nivel === 'admin') {
                 abrirPanel(document.getElementById('panelAdmin'));
@@ -3692,7 +3374,6 @@ function exportarRecibosParaExcel() {
             }
         });
 
-        // Admin Tabs
         document.querySelectorAll('.admin-tab').forEach(tab => {
             tab.addEventListener('click', function () {
                 document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
@@ -3709,7 +3390,6 @@ function exportarRecibosParaExcel() {
             });
         });
 
-        // Admin - Usuários
         document.getElementById('adminNovoUsuario').addEventListener('click', function () {
             document.getElementById('adminFormUsuarioTitulo').textContent = '➕ Novo Usuário';
             document.getElementById('adminFormUsuarioLogin').value = '';
@@ -3728,7 +3408,6 @@ function exportarRecibosParaExcel() {
         document.getElementById('adminFormUsuarioSalvar').addEventListener('click', adminSalvarUsuario);
         document.getElementById('adminFormUsuarioCancelar').addEventListener('click', adminCancelarUsuario);
 
-        // Admin - Cidades
         document.getElementById('adminNovaCidade').addEventListener('click', function () {
             document.getElementById('adminFormCidadeTitulo').textContent = '➕ Nova Cidade';
             document.getElementById('adminFormCidadeNome').value = '';
@@ -3741,11 +3420,9 @@ function exportarRecibosParaExcel() {
         document.getElementById('adminFormCidadeSalvar').addEventListener('click', adminSalvarCidade);
         document.getElementById('adminFormCidadeCancelar').addEventListener('click', adminCancelarCidade);
 
-        // Admin - Auditoria
         document.getElementById('adminExportarAuditoria').addEventListener('click', exportarAuditoria);
         document.getElementById('adminLimparAuditoria').addEventListener('click', limparAuditoria);
 
-        // Recibo
         document.getElementById('btnSalvarRecibo').addEventListener('click', salvarReciboAtual);
         document.getElementById('btnImprimirRecibo').addEventListener('click', imprimirReciboAtualTemp);
         document.getElementById('btnAdicionarPrincipal').addEventListener('click', adicionarRegistro);
@@ -3757,7 +3434,6 @@ function exportarRecibosParaExcel() {
         document.getElementById('btnSalvarRecibosFormatados').addEventListener('click', salvarRecibosFormatados);
         document.getElementById('toggleParcialBtn').addEventListener('click', toggleModoParcial);
 
-        // Formatação de valor
         document.getElementById('reciboValor').addEventListener('input', function () { formatarInputMoeda(this); });
         document.getElementById('editarValor').addEventListener('input', function () { formatarInputMoeda(this); });
         document.getElementById('parcialDinheiro').addEventListener('input', function () {
@@ -3773,14 +3449,9 @@ function exportarRecibosParaExcel() {
             calcularTotalParcial();
         });
 
-        // ============================================================
-        // CLOSE BUTTONS - CORRIGIDO
-        // ============================================================
         document.querySelectorAll('.close-btn').forEach(btn => {
             btn.addEventListener('click', function (e) {
                 e.stopPropagation();
-
-                // Lista de todos os painéis possíveis
                 const paineis = [
                     'panel-adicionar',
                     'panel-recibo',
@@ -3789,7 +3460,6 @@ function exportarRecibosParaExcel() {
                     'panel-backup',
                     'panel-admin'
                 ];
-
                 let panel = null;
                 for (let p of paineis) {
                     const el = this.closest('.' + p);
@@ -3798,27 +3468,18 @@ function exportarRecibosParaExcel() {
                         break;
                     }
                 }
-
                 if (panel) {
                     fecharPanel(panel);
-                } else {
-                    console.warn('Close button: painel não encontrado');
                 }
             });
         });
 
-        // ============================================================
-        // OVERLAY
-        // ============================================================
         document.getElementById('overlay').addEventListener('click', function () {
             document.querySelectorAll(
                 '.panel-adicionar.show, .panel-recibo.show, .panel-historico.show, .panel-editar.show, .panel-backup.show, .panel-admin.show'
             ).forEach(p => fecharPanel(p));
         });
 
-        // ============================================================
-        // TECLADO
-        // ============================================================
         document.addEventListener('keydown', function (e) {
             if (document.getElementById('appLayout').style.display === 'none') return;
             if (e.ctrlKey && e.key === 'n') {
@@ -3856,9 +3517,6 @@ function exportarRecibosParaExcel() {
             }
         });
 
-        // ============================================================
-        // ORDENAÇÃO
-        // ============================================================
         document.querySelectorAll('.sortable').forEach(th => {
             th.addEventListener('click', function () {
                 const sortKey = this.dataset.sort;
@@ -3875,9 +3533,6 @@ function exportarRecibosParaExcel() {
             });
         });
 
-        // ============================================================
-        // BACKUP AUTOMÁTICO
-        // ============================================================
         setInterval(() => { fazerBackupAutomatico(); }, 5 * 60 * 1000);
 
         console.log('🚀 Sistema DK Telecom Multi-Cidades iniciado!');
